@@ -1,0 +1,6 @@
+{
+  "Environment": "dev",
+  "AwsRegion": "eu-west-1",
+  "DbInstanceClass": "db.t3.micro",
+  "EnableMultiAz": "false"
+}

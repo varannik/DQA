@@ -1,0 +1,31 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: DataSentinel SQS queues
+
+Parameters:
+  Environment:
+    Type: String
+
+Resources:
+  DqaRunRequestedQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub 'dqa-run-requested-${Environment}'
+      VisibilityTimeout: 900
+      MessageRetentionPeriod: 345600
+
+  DqaRunCompletedQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub 'dqa-run-completed-${Environment}'
+      VisibilityTimeout: 120
+      MessageRetentionPeriod: 345600
+
+Outputs:
+  DqaRunRequestedQueueUrl:
+    Value: !Ref DqaRunRequestedQueue
+    Export:
+      Name: !Sub 'datasentinel-foundation-${Environment}-DqaRunRequestedQueueUrl'
+  DqaRunCompletedQueueUrl:
+    Value: !Ref DqaRunCompletedQueue
+    Export:
+      Name: !Sub 'datasentinel-foundation-${Environment}-DqaRunCompletedQueueUrl'

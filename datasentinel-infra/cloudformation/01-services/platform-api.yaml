@@ -1,0 +1,216 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: DataSentinel Platform API — ALB + ECS Fargate
+
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues: [dev, staging, prod]
+  ImageUri:
+    Type: String
+  DesiredCount:
+    Type: Number
+    Default: 1
+
+Resources:
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/datasentinel-platform-api-${Environment}'
+      RetentionInDays: 14
+
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: ReadSecrets
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-DbMasterSecretArn'
+                  - Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-JwtSecretArn'
+                  - Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-MessageSigningSecretArn'
+
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: PlatformApiAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub
+                  - 'arn:aws:s3:::${Bucket}/*'
+                  - Bucket:
+                      Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-DatasetsBucketName'
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: '*'
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub 'ds-api-${Environment}'
+      Scheme: internet-facing
+      Type: application
+      Subnets: !Split
+        - ','
+        - Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-PublicSubnetIds'
+      SecurityGroups:
+        - Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-AlbSecurityGroupId'
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub 'ds-api-tg-${Environment}'
+      Port: 8000
+      Protocol: HTTP
+      TargetType: ip
+      VpcId:
+        Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-VpcId'
+      HealthCheckPath: /api/health
+      HealthCheckIntervalSeconds: 30
+      Matcher:
+        HttpCode: '200'
+
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub 'platform-api-${Environment}'
+      Cpu: '512'
+      Memory: '1024'
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: platform-api
+          Image: !Ref ImageUri
+          PortMappings:
+            - ContainerPort: 8000
+          Environment:
+            - Name: ENVIRONMENT
+              Value: !Ref Environment
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+            - Name: DB_HOST
+              Value:
+                Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-PlatformDbEndpoint'
+            - Name: DB_NAME
+              Value: datasentinel
+            - Name: DB_USER
+              Value: datasentinel
+            - Name: S3_DATASETS_BUCKET
+              Value:
+                Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-DatasetsBucketName'
+            - Name: S3_MODELS_BUCKET
+              Value:
+                Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-ModelsBucketName'
+            - Name: SQS_DQA_REQUESTED_URL
+              Value:
+                Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-DqaRunRequestedQueueUrl'
+            - Name: SQS_DQA_COMPLETED_URL
+              Value:
+                Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-DqaRunCompletedQueueUrl'
+            - Name: SQS_CORRECTION_REQUESTED_URL
+              Value:
+                Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-CorrectionRequestedQueueUrl'
+            - Name: SQS_CORRECTION_COMPLETED_URL
+              Value:
+                Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-CorrectionCompletedQueueUrl'
+            - Name: SQS_AI_PREDICT_REQUESTED_URL
+              Value:
+                Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-AiPredictRequestedQueueUrl'
+            - Name: SQS_AI_TRAINING_TRIGGERED_URL
+              Value:
+                Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-AiTrainingTriggeredQueueUrl'
+            - Name: DQA_EXECUTION_MODE
+              Value: sqs
+            - Name: CORRECTION_EXECUTION_MODE
+              Value: sqs
+          Secrets:
+            - Name: DB_PASSWORD
+              ValueFrom: !Sub
+                - '${Arn}:password::'
+                - Arn:
+                    Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-DbMasterSecretArn'
+            - Name: SECRET_KEY
+              ValueFrom:
+                Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-JwtSecretArn'
+            - Name: INTERNAL_MESSAGE_SIGNING_KEY
+              ValueFrom:
+                Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-MessageSigningSecretArn'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: platform-api
+
+  Service:
+    Type: AWS::ECS::Service
+    DependsOn: HttpListener
+    Properties:
+      ServiceName: !Sub 'platform-api-${Environment}'
+      Cluster:
+        Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-EcsClusterName'
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets: !Split
+            - ','
+            - Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-PrivateSubnetIds'
+          SecurityGroups:
+            - Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-PlatformApiSecurityGroupId'
+      LoadBalancers:
+        - ContainerName: platform-api
+          ContainerPort: 8000
+          TargetGroupArn: !Ref TargetGroup
+
+Outputs:
+  LoadBalancerDns:
+    Value: !GetAtt LoadBalancer.DNSName
+    Description: Platform API URL (http://DNS/api/docs)
+  ServiceName:
+    Value: !GetAtt Service.Name

@@ -1,0 +1,141 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: DataSentinel AI Engine worker — ECS Fargate
+
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues: [dev, staging, prod]
+  ImageUri:
+    Type: String
+  DesiredCount:
+    Type: Number
+    Default: 1
+
+Resources:
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/datasentinel-ai-engine-${Environment}'
+      RetentionInDays: 14
+
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: ReadSigningSecret
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-MessageSigningSecretArn'
+
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AiWorkerAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:SendMessage
+                  - sqs:GetQueueAttributes
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource:
+                  - !Sub
+                    - 'arn:aws:s3:::${Datasets}/*'
+                    - Datasets:
+                        Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-DatasetsBucketName'
+                  - !Sub
+                    - 'arn:aws:s3:::${Models}/*'
+                    - Models:
+                        Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-ModelsBucketName'
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub 'ai-engine-${Environment}'
+      Cpu: '512'
+      Memory: '1024'
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: ai-worker
+          Image: !Ref ImageUri
+          Environment:
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+            - Name: S3_DATASETS_BUCKET
+              Value:
+                Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-DatasetsBucketName'
+            - Name: S3_MODELS_BUCKET
+              Value:
+                Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-ModelsBucketName'
+            - Name: SQS_PREDICT_URL
+              Value:
+                Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-AiPredictRequestedQueueUrl'
+            - Name: SQS_TRAINING_URL
+              Value:
+                Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-AiTrainingTriggeredQueueUrl'
+            - Name: SQS_RESULT_URL
+              Value:
+                Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-CorrectionCompletedQueueUrl'
+          Secrets:
+            - Name: INTERNAL_MESSAGE_SIGNING_KEY
+              ValueFrom:
+                Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-MessageSigningSecretArn'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ai-worker
+
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub 'ai-engine-${Environment}'
+      Cluster:
+        Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-EcsClusterName'
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets: !Split
+            - ','
+            - Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-PrivateSubnetIds'
+          SecurityGroups:
+            - Fn::ImportValue: !Sub 'datasentinel-foundation-${Environment}-WorkerSecurityGroupId'
+
+Outputs:
+  ServiceName:
+    Value: !GetAtt Service.Name

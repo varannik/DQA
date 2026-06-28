@@ -1,0 +1,35 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: DataSentinel S3 buckets
+
+Parameters:
+  Environment:
+    Type: String
+
+Resources:
+  DatasetsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'datasentinel-datasets-${Environment}-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  ModelsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'datasentinel-models-${Environment}-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+Outputs:
+  DatasetsBucketName:
+    Value: !Ref DatasetsBucket
+    Export:
+      Name: !Sub 'datasentinel-foundation-${Environment}-DatasetsBucketName'
+  ModelsBucketName:
+    Value: !Ref ModelsBucket
+    Export:
+      Name: !Sub 'datasentinel-foundation-${Environment}-ModelsBucketName'
