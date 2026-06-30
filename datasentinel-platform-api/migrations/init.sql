@@ -219,12 +219,4 @@ VALUES (
     'admin'
 ) ON CONFLICT (email) DO UPDATE SET hashed_password = EXCLUDED.hashed_password;
 
--- ── Seed: demo project ────────────────────────────────────────────────────
-INSERT INTO projects (tenant_id, name, description, domain, config)
-VALUES (
-    '00000000-0000-4000-8000-000000000001',
-    'CO₂ Sequestration — Stream 1',
-    'Fabric-Native Platform DQA — DQA-STR1-TDD-001',
-    'co2_sequestration',
-    '{"batch_frequency_minutes": 120, "expected_rows_per_batch": 60, "sla_threshold_seconds": 300, "min_data_coverage": 0.85, "dimension_weights": {"completeness": 0.15, "integrity": 0.20, "timeliness": 0.10, "uniqueness": 0.10, "accuracy": 0.20, "consistency": 0.15, "relevance": 0.10}}'
-) ON CONFLICT DO NOTHING;
+-- Demo project is created by app/core/startup.py if none exists

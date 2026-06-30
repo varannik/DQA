@@ -4,13 +4,14 @@ TAG ?= latest
 STACK_PREFIX = datasentinel-$(ENV)
 SERVICES = platform-api dqa-engine correction-engine ai-engine
 
-.PHONY: help test build deploy-infra deploy-services deploy-aws preflight cleanup-stack destroy-aws export-openapi
+.PHONY: help test build deploy-infra deploy-services deploy-aws deploy-admin-ui preflight cleanup-stack destroy-aws export-openapi
 
 help:
 	@echo "DataSentinel Platform — AWS deployment"
 	@echo ""
 	@echo "  make preflight ENV=dev       Check AWS credentials + IAM permissions"
 	@echo "  make deploy-aws ENV=dev     Full stack: foundation + images + ECS services"
+	@echo "  make deploy-admin-ui ENV=dev  Deploy admin UI (requires platform-api stack)"
 	@echo "  make deploy-infra ENV=dev   Foundation only (VPC, RDS, SQS, S3, ECR)"
 	@echo "  make deploy-services ENV=dev  ECS services only (requires images in ECR)"
 	@echo "  make cleanup-stack ENV=dev   Remove failed/stuck foundation stack"
@@ -47,3 +48,6 @@ deploy-services:
 
 deploy-aws:
 	@ENV=$(ENV) AWS_REGION=$(AWS_REGION) TAG=$(TAG) ./scripts/deploy-aws.sh
+
+deploy-admin-ui:
+	@ENV=$(ENV) AWS_REGION=$(AWS_REGION) TAG=$(TAG) $(MAKE) -C ../datasentinel-admin-ui deploy-aws

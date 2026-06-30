@@ -9,14 +9,16 @@ from app.core.tenancy import DEFAULT_TENANT_ID, get_or_create_default_tenant
 def create_default_admin():
     # Retry a few times in case DB isn't ready
     for attempt in range(5):
+        db = None
         try:
-            db: Session = SessionLocal()
+            from app.core.migrations import run_migrations
+
+            run_migrations()
+
+            db = SessionLocal()
             from app.models import User, Project
 
             tenant = get_or_create_default_tenant(db)
-
-            from app.core.migrations import run_migrations
-            run_migrations()
 
             existing = db.query(User).filter(User.email == "admin@datasentinel.io").first()
             if not existing:
@@ -66,11 +68,12 @@ def create_default_admin():
             return  # success
 
         except Exception as e:
-            logger.warning(f"Startup attempt {attempt+1} failed: {e}")
-            try:
-                db.close()
-            except:
-                pass
+            logger.warning("Startup attempt %s failed: %s", attempt + 1, e, exc_info=True)
+            if db is not None:
+                try:
+                    db.close()
+                except Exception:
+                    pass
             time.sleep(2)
 
     logger.error("Could not initialise default admin after 5 attempts")

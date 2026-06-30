@@ -1,35 +1,21 @@
-Add DataSentinel platform monorepo, AWS deploy tooling, and partner API docs
+Fix idempotent DB migrations and add platform-api redeploy tooling
 
-Implement the phased migration from the legacy backend into independently
-deployable services: shared contracts, Platform API, three SQS workers,
-CloudFormation infrastructure, and deployment scripts targeting eu-west-1.
+Make startup migrations safe to re-run on every ECS task launch and add
+helpers for redeploying the Platform API without a full stack deploy.
 
-Platform API (datasentinel-platform-api):
-- FastAPI orchestration with S3 storage, SQS job dispatch, result worker
-- Client-credentials auth, scoped JWTs, webhooks with HMAC signatures
-- Feature flags for in-process vs distributed execution modes
+Database migrations (datasentinel-platform-api):
+- Track applied files in schema_migrations to skip re-execution
+- Use engine.begin() for transactional migration batches
+- Run migrations before admin/tenant seed in startup.py
+- Remove demo project INSERT from init.sql (already created in startup.py)
+- Improve startup retry logging and session cleanup
 
-Workers:
-- DQA, correction, and AI engines as SQS consumers with shared contracts
-
-Infrastructure (datasentinel-infra):
-- Foundation stack: VPC, RDS PostgreSQL, S3, SQS+DLQs, ECR, ECS cluster
-- Service stacks for platform-api and worker ECS services
-- DataSentinelDeploy IAM policy and aws-preflight/cleanup helpers
-
-Deploy and ops:
-- make deploy-aws, preflight, cleanup-stack, export-openapi
-- Fix service-stack parameter passing and build_push stdout capture
-- Fix CloudFormation security group description (ASCII-only GroupDescription)
-- Fix preflight CloudFormation validate-template probe template
-
-Documentation:
-- PLATFORM_MIGRATION_GUIDE.md execution plan
-- Partner integration guide, AsciiDoc export, and checked-in OpenAPI 3.1 spec
-  (also under ../docs/ — add to repo or commit separately if docs live outside)
+Deploy and docs:
+- Add scripts/redeploy-platform-api.sh (ECR build/push, CFN update, ECS rollout)
+- Add make deploy-admin-ui target delegating to datasentinel-admin-ui
+- Link admin UI and integration docs from README
 
 Test plan:
-- make test
-- make preflight ENV=dev
-- make export-openapi
-- make deploy-aws ENV=dev (or SKIP_FOUNDATION=true for service stacks only)
+- Restart platform-api locally and confirm migrations log "Skipping" on second boot
+- ./scripts/redeploy-platform-api.sh ENV=dev
+- make deploy-admin-ui ENV=dev

@@ -43,6 +43,9 @@ Share these with integrators:
 | Document | Purpose |
 |----------|---------|
 | [`../docs/PARTNER_API_GUIDE.md`](../docs/PARTNER_API_GUIDE.md) | Integration guide (auth, webhooks, workflows) |
+| [`../docs/ADMIN_UI_MIGRATION.md`](../docs/ADMIN_UI_MIGRATION.md) | Legacy admin UI → DQA platform API |
+| [`../datasentinel-admin-ui/`](../datasentinel-admin-ui/) | **Admin UI** (production-ready, AWS deploy) |
+| [`../docs/DATASENTINEL_INTEGRATION.md`](../docs/DATASENTINEL_INTEGRATION.md) | Full UI integration pack (partner UIs) |
 | [`../docs/partner-api-guide.adoc`](../docs/partner-api-guide.adoc) | AsciiDoc version (export to PDF/HTML) |
 | [`../docs/openapi/datasentinel-platform-api.openapi.json`](../docs/openapi/datasentinel-platform-api.openapi.json) | OpenAPI 3.1 contract |
 
